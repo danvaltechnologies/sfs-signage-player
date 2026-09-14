@@ -14,7 +14,10 @@ jobs:
     env:
       # A fresh SDK root rather than relying on whatever happens to be
       # preinstalled on the runner image — deterministic across runs.
-      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+      # ANDROID_HOME only: the runner image also has its own ANDROID_SDK_ROOT
+      # pointing elsewhere, and Gradle refuses to guess between the two if
+      # both are set to different paths.
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -27,21 +30,21 @@ jobs:
 
       - name: Install the Android command-line tools
         run: |
-          mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+          mkdir -p "$ANDROID_HOME/cmdline-tools"
           curl -sSLo cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip
-          unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
-          mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+          unzip -q cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools"
+          mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest"
 
       # sdkmanager --licenses is interactive by default — it prints each
       # license and waits on stdin. In a non-interactive shell that reads
       # straight to EOF and every license comes back rejected. Piping an
       # endless "y" answers every prompt instead.
       - name: Accept Android SDK licenses
-        run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
 
       - name: Install the SDK platform and build-tools this project targets
         run: |
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Set up Gradle
