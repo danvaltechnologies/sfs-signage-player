@@ -1,0 +1,3 @@
+-keepattributes *Annotation*, InnerClasses
+-keepclassmembers class com.sundryfoods.player.data.** { *; }
+-keep,includedescriptorclasses class com.sundryfoods.player.data.**$$serializer { *; }
