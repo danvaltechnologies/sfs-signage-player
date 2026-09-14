@@ -87,7 +87,10 @@ dependencies {
     implementation("androidx.media3:media3-ui:1.4.1")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // 1.7.x requires Kotlin 2.0+; the project is pinned to Kotlin 1.9.24
+    // (see the root build.gradle.kts), so this needs a version built for
+    // that — 1.6.3 is the last line compatible with Kotlin 1.9.x.
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation("androidx.work:work-runtime-ktx:2.9.1")
