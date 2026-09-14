@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -32,7 +34,7 @@ android {
         // Auto-updates only install over the old build when both are signed with
         // the same key, so release signing is mandatory for the fleet.
         create("release") {
-            val props = java.util.Properties()
+            val props = Properties()
             val file = rootProject.file("keystore.properties")
             if (file.exists()) {
                 file.inputStream().use(props::load)
