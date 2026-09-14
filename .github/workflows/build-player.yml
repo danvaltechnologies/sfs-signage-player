@@ -14,10 +14,12 @@ jobs:
     env:
       # A fresh SDK root rather than relying on whatever happens to be
       # preinstalled on the runner image — deterministic across runs.
-      # ANDROID_HOME only: the runner image also has its own ANDROID_SDK_ROOT
-      # pointing elsewhere, and Gradle refuses to guess between the two if
-      # both are set to different paths.
+      # Both vars point here: the runner image bakes in its own
+      # ANDROID_SDK_ROOT regardless of what a job sets for ANDROID_HOME,
+      # and Gradle refuses to guess between two different paths — setting
+      # both to the same one removes the disagreement instead of the var.
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
+      ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
