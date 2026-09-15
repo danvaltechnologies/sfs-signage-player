@@ -85,9 +85,25 @@ jobs:
       - name: Build the debug APK
         run: gradle assembleDebug --no-daemon
 
-      - name: Upload the APK
+      - name: Upload the APK as a build artifact
         uses: actions/upload-artifact@v4
         with:
           name: sundry-player-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      # A build artifact's download link requires a signed-in, authorized
+      # GitHub session — no good for a device's self-update check, which is
+      # just a plain unauthenticated HTTP GET. Publishing to this one fixed
+      # release tag instead gives a permanent, stable, publicly-downloadable
+      # URL that always points at the latest build (the action replaces the
+      # existing release's asset rather than creating a new release each
+      # time), as long as the repo itself is public.
+      - name: Publish to the "latest-debug" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-debug
+          name: Latest debug build
+          body: Auto-published by CI from ${{ github.sha }}. Always the most recent successful build on main.
+          make_latest: false
+          files: app/build/outputs/apk/debug/app-debug.apk
