@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -71,8 +73,14 @@ fun PairingScreen(onPaired: () -> Unit) {
         }
     }
 
+    // A kiosk device's own screen can crop content at the edges (overscan) or
+    // simply render fewer usable pixels than expected — plain fillMaxSize
+    // content with no scroll route has no fallback when that happens, and a
+    // control past the edge becomes permanently unreachable. Scrolling is a
+    // cheap safety net: nothing is ever truly off-screen, just a D-pad
+    // press away.
     Column(
-        Modifier.fillMaxSize().background(Ink).padding(48.dp),
+        Modifier.fillMaxSize().background(Ink).verticalScroll(rememberScrollState()).padding(48.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -120,16 +128,26 @@ fun PairingScreen(onPaired: () -> Unit) {
 
         Spacer(Modifier.height(20.dp))
 
+        // Auto-submits at 6 digits rather than requiring a separate confirm
+        // tap — on some TV outputs the confirm button and the "Pair screen"
+        // button below can end up past the visible edge of the screen
+        // (overscan/cropping), leaving no reachable way to submit otherwise.
+        fun appendDigit(digit: Char) {
+            if (pin.length >= 6) return
+            pin += digit
+            if (pin.length == 6) submit()
+        }
+
         listOf("123", "456", "789").forEach { row ->
             Row(Modifier.padding(vertical = 4.dp)) {
                 row.forEach { digit ->
-                    Key(digit.toString()) { if (pin.length < 6) pin += digit }
+                    Key(digit.toString()) { appendDigit(digit) }
                 }
             }
         }
         Row(Modifier.padding(vertical = 4.dp)) {
             Key("⌫") { pin = pin.dropLast(1) }
-            Key("0") { if (pin.length < 6) pin += "0" }
+            Key("0") { appendDigit('0') }
             Key("✓", highlight = true) { submit() }
         }
 
