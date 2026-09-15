@@ -44,6 +44,21 @@ android {
                 keyPassword = props.getProperty("keyPassword")
             }
         }
+        // Debug builds need this too: the default (unset) debug signing
+        // config is whatever AGP auto-generates at ~/.android/debug.keystore
+        // on the machine that happens to run the build — a fresh CI runner
+        // gets a fresh one every time, so every build has a different
+        // signature. That breaks both self-update AND installing a newer
+        // debug build over an older one (Android refuses a signature
+        // mismatch either way, forcing an uninstall first). Pointing every
+        // build at this one, checked-in keystore keeps the signature
+        // constant across CI runs.
+        create("debug") {
+            storeFile = rootProject.file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -54,6 +69,7 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

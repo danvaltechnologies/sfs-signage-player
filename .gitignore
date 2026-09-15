@@ -6,3 +6,10 @@ local.properties
 keystore.properties
 .idea/
 .DS_Store
+
+# The debug keystore is the exception to the *.keystore rule above: it's
+# checked in on purpose so every CI build shares one signature, and it's
+# not a real secret — "android"/"androiddebugkey"/"android" is the fixed,
+# publicly-documented Android debug-signing convention, not a private key
+# for anything that matters.
+!app/debug.keystore

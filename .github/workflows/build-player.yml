@@ -8,6 +8,11 @@ on:
   push:
     branches: ["main"]
 
+permissions:
+  # Needed so this workflow can commit the debug keystore back to the repo
+  # the one time it has to generate it.
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -54,9 +59,29 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      # Debug builds are auto-signed with a throw-away debug key by the
-      # Android Gradle Plugin itself — no keystore secrets needed just to
-      # produce something installable for testing.
+      # Every debug build needs the SAME signature, or Android refuses to
+      # install a newer one over an older one (and self-update, which relies
+      # on exactly that, silently fails). Generate the keystore once and
+      # commit it back to the repo; every run after this one finds it
+      # already checked in and reuses it instead of making a new one.
+      - name: Ensure a stable debug keystore exists
+        run: |
+          if [ -f app/debug.keystore ]; then
+            echo "debug.keystore already checked in — reusing it"
+          else
+            keytool -genkeypair -v \
+              -keystore app/debug.keystore \
+              -storepass android -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add app/debug.keystore
+            git commit -m "Add stable debug keystore for CI builds [skip ci]"
+            git push
+          fi
+
       - name: Build the debug APK
         run: gradle assembleDebug --no-daemon
 
