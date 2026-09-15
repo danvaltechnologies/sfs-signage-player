@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -91,6 +92,20 @@ fun PairingScreen(onPaired: () -> Unit) {
             label = { Text("Console address") },
             singleLine = true,
             modifier = Modifier.width(560.dp),
+            // The screen behind this field is a hardcoded dark background,
+            // not the app's Material theme, so the default OutlinedTextField
+            // colors (assuming a light surface) render the typed text and
+            // label almost invisibly dark-on-dark. Set every color it needs
+            // explicitly instead of relying on theme defaults.
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                focusedLabelColor = Orange,
+                unfocusedLabelColor = Color(0xFF9AA1AC),
+                focusedBorderColor = Orange,
+                unfocusedBorderColor = Color(0xFF5A626E),
+                cursorColor = Orange,
+            ),
         )
 
         Spacer(Modifier.height(20.dp))
