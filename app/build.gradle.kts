@@ -60,7 +60,13 @@ android {
         // create("debug") tries to register a second config with the same
         // name and Gradle refuses it.
         getByName("debug") {
-            storeFile = rootProject.file("debug.keystore")
+            // file(), not rootProject.file(): the keystore lives at
+            // app/debug.keystore (see the CI workflow's "Ensure a stable
+            // debug keystore exists" step and the .gitignore exception for
+            // it), and this block's project is already the app module — the
+            // rootProject-relative form was pointing one directory too high,
+            // at the repo root.
+            storeFile = file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
