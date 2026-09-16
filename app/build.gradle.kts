@@ -53,7 +53,13 @@ android {
         // mismatch either way, forcing an uninstall first). Pointing every
         // build at this one, checked-in keystore keeps the signature
         // constant across CI runs.
-        create("debug") {
+        //
+        // AGP already auto-registers a SigningConfig named "debug" for every
+        // project (that's what silently signed builds before this file
+        // existed), so this has to reconfigure that existing one — calling
+        // create("debug") tries to register a second config with the same
+        // name and Gradle refuses it.
+        getByName("debug") {
             storeFile = rootProject.file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
