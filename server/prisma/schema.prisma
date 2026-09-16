@@ -1,0 +1,449 @@
+// Sundry Foods signage & queue backend — PostgreSQL schema.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- organisation
+
+model Brand {
+  id        String   @id
+  name      String
+  /// 3-letter code used as the BRAND segment of a screen ID, e.g. "KLM".
+  code      String?
+  /// Official brand code used in store location codes, e.g. "BRD003".
+  brandCode String?
+  accent    String   @default("accent")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  outlets       Outlet[]
+  screens       Screen[]
+  media         MediaAsset[]
+  playlists     Playlist[]
+  schedules     Schedule[]
+  announcements Announcement[]
+  prepConfig    BrandPrepConfig?
+  orders        PosOrder[]
+  memberships   BrandMembership[]
+  auditEvents   AuditEvent[]
+}
+
+model Outlet {
+  id        String   @id @default(cuid())
+  brandId   String
+  /// Official brand location code, e.g. "PHC16Q/BRD003".
+  storeCode String?  @unique
+  /// 3-letter city code used in screen IDs, e.g. "PHC".
+  cityCode  String?
+  /// Store number within the city (2 digits).
+  storeNo   String?
+  name      String
+  city      String
+  region    String
+  createdAt DateTime @default(now())
+
+  brand   Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  screens Screen[]
+  orders  PosOrder[]
+
+  @@index([brandId])
+}
+
+// ---------------------------------------------------------------- users & access
+
+enum RoleTier {
+  ORGANIZATION
+  BRAND
+  OUTLET
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+model Role {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  name           String
+  tier           RoleTier
+  allBrands      Boolean  @default(false)
+  /// Module keys this role may open, e.g. ["media","playlists","approvals"].
+  modules        String[]
+  canPublish     Boolean  @default(false)
+  canApprove     Boolean  @default(false)
+  canManageUsers Boolean  @default(false)
+  description    String?
+
+  users User[]
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String
+  passwordHash String?
+  status       UserStatus @default(INVITED)
+  roleId       String
+  /// Per-user override of the role's module list (empty = inherit role).
+  modules      String[]
+  jobTitle     String?
+  phone        String?
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  role              Role               @relation(fields: [roleId], references: [id])
+  brands            BrandMembership[]
+  notifications     Notification[]
+  pushSubscriptions PushSubscription[]
+  refreshTokens     RefreshToken[]
+  auditEvents       AuditEvent[]
+  submitted         ApprovalRequest[]  @relation("submitter")
+  reviewed          ApprovalRequest[]  @relation("reviewer")
+
+  @@index([roleId])
+}
+
+model BrandMembership {
+  userId  String
+  brandId String
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@id([userId, brandId])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------- content
+
+enum ApprovalState {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum MediaKind {
+  IMAGE
+  VIDEO
+}
+
+model MediaAsset {
+  id           String        @id @default(cuid())
+  brandId      String
+  name         String
+  kind         MediaKind
+  /// Seconds; null means "full length" (video plays to the end).
+  duration     Int?
+  url          String
+  thumbnailUrl String?
+  approval     ApprovalState @default(DRAFT)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  brand         Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  playlistItems PlaylistItem[]
+
+  @@index([brandId, approval])
+}
+
+model Playlist {
+  id        String        @id @default(cuid())
+  brandId   String
+  name      String
+  approval  ApprovalState @default(DRAFT)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  brand     Brand          @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  items     PlaylistItem[]
+  schedules Schedule[]
+
+  @@index([brandId, approval])
+}
+
+model PlaylistItem {
+  id         String  @id @default(cuid())
+  playlistId String
+  mediaId    String?
+  label      String
+  /// Seconds; null means "full length".
+  duration   Int?
+  position   Int
+  active     Boolean @default(true)
+
+  playlist Playlist    @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  media    MediaAsset? @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+
+  @@index([playlistId, position])
+}
+
+model Schedule {
+  id         String        @id @default(cuid())
+  brandId    String
+  name       String
+  playlistId String?
+  startsAt   DateTime
+  endsAt     DateTime?
+  /// Optional daypart window, e.g. "17:00-22:00".
+  daypart    String?
+  /// Screen ids this campaign targets; empty = every screen in the brand.
+  screenIds  String[]
+  approval   ApprovalState @default(DRAFT)
+  published  Boolean       @default(false)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  brand    Brand     @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  playlist Playlist? @relation(fields: [playlistId], references: [id], onDelete: SetNull)
+
+  @@index([brandId, approval])
+}
+
+model Announcement {
+  id        String        @id @default(cuid())
+  brandId   String
+  title     String
+  body      String
+  priority  String        @default("normal")
+  startsAt  DateTime      @default(now())
+  endsAt    DateTime?
+  approval  ApprovalState @default(DRAFT)
+  published Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  brand Brand @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([brandId, approval])
+}
+
+// ---------------------------------------------------------------- approvals
+
+enum ApprovalKind {
+  MEDIA
+  PLAYLIST
+  SCHEDULE
+  ANNOUNCEMENT
+}
+
+model ApprovalRequest {
+  id            String        @id @default(cuid())
+  kind          ApprovalKind
+  entityId      String
+  brandId       String
+  title         String
+  state         ApprovalState @default(PENDING)
+  note          String?
+  submittedById String?
+  reviewedById  String?
+  submittedAt   DateTime      @default(now())
+  reviewedAt    DateTime?
+
+  submittedBy User? @relation("submitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy  User? @relation("reviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([state, brandId])
+  @@index([kind, entityId])
+}
+
+// ---------------------------------------------------------------- screens
+
+enum ScreenStatus {
+  ONLINE
+  SYNCING
+  FAILED
+  OFFLINE
+}
+
+enum ScreenType {
+  MENU_BOARD
+  PROMO
+  QUEUE
+}
+
+model Screen {
+  id          String       @id @default(cuid())
+  brandId     String
+  outletId    String?
+  /// Screen ID per the naming legend: BRAND-LOC-STORE#-ZONE-SCREENTYPE-##
+  code        String       @unique
+  /// Zone code where the screen sits, e.g. "CTR".
+  zone        String?
+  location    String
+  city        String
+  region      String
+  type        ScreenType   @default(MENU_BOARD)
+  status      ScreenStatus @default(OFFLINE)
+  firmware    String       @default("v3.4.1")
+  playing     String?
+  pairingCode String?      @unique
+  pairedAt    DateTime?
+  lastSeenAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  brand  Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+
+  @@index([brandId, status])
+}
+
+// ---------------------------------------------------------------- queue / POS
+
+enum PosStage {
+  PLACED
+  PREPARING
+  READY
+  COLLECTED
+}
+
+enum PosChannel {
+  COUNTER
+  KIOSK
+  DRIVE_THRU
+  DELIVERY
+}
+
+model BrandPrepConfig {
+  brandId          String @id
+  defaultMinutes   Int    @default(8)
+  autoCollectAfter Int    @default(6)
+
+  brand Brand      @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  rules PrepRule[]
+}
+
+model PrepRule {
+  id       String   @id @default(cuid())
+  brandId  String
+  product  String
+  keywords String[]
+  minutes  Int
+
+  config BrandPrepConfig @relation(fields: [brandId], references: [brandId], onDelete: Cascade)
+
+  @@index([brandId])
+}
+
+model PosOrder {
+  /// POS order id (idempotency key for the webhook).
+  id                 String     @id
+  brandId            String
+  outletId           String?
+  ticket             String
+  channel            PosChannel @default(COUNTER)
+  customer           String     @default("Guest")
+  itemsLabel         String
+  itemNames          String[]
+  /// When the POS recorded payment.
+  placedAt           DateTime
+  prepMinutes        Int
+  collectedAt        DateTime?
+  overdueAlertSentAt DateTime?
+  createdAt          DateTime   @default(now())
+
+  brand  Brand   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  outlet Outlet? @relation(fields: [outletId], references: [id], onDelete: SetNull)
+
+  @@index([brandId, placedAt])
+}
+
+// ---------------------------------------------------------------- audit & notify
+
+enum AuditSeverity {
+  INFO
+  NOTICE
+  CRITICAL
+}
+
+model AuditEvent {
+  id        String        @id @default(cuid())
+  brandId   String?
+  actorId   String?
+  actorName String
+  module    String
+  action    String
+  detail    String
+  category  String
+  severity  AuditSeverity @default(INFO)
+  metadata  Json?
+  createdAt DateTime      @default(now())
+
+  brand Brand? @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  actor User?  @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([brandId, category])
+}
+
+model Notification {
+  id        String        @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  /// Console deep link, e.g. "/approvals?id=abc".
+  link      String?
+  category  String        @default("system")
+  severity  AuditSeverity @default(INFO)
+  readAt    DateTime?
+  emailedAt DateTime?
+  createdAt DateTime      @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------- player OTA
+
+/// A build of the Android player app. Boxes poll the newest published row and
+/// install it when its versionCode is higher than the one they are running.
+model PlayerRelease {
+  id            String   @id @default(cuid())
+  versionCode   Int      @unique
+  versionName   String
+  apkUrl        String
+  /// Hex SHA-256 of the APK; a box refuses a download that does not match.
+  sha256        String?
+  mandatory     Boolean  @default(false)
+  notes         String?
+  published     Boolean  @default(true)
+  publishedById String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
