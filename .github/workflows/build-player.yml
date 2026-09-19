@@ -82,15 +82,11 @@ jobs:
             git push
           fi
 
-      # Bakes the console address into the build so a technician pairing a box
-      # only ever has to type the 6-digit PIN, not this URL on a TV remote.
-      # This is a free Cloudflare quick tunnel, not a permanent domain — it
-      # rotates whenever it drops (it already has twice), so this value goes
-      # stale the next time that happens and needs updating here again.
-      # Once the backend has a real, permanent host, put that URL here
-      # instead and this stops being a recurring chore.
+      # No apiBaseUrl override needed anymore — build.gradle.kts now defaults
+      # DEFAULT_API_BASE_URL to the real, permanent backend directly, so a
+      # technician pairing a box only ever has to type the 6-digit PIN.
       - name: Build the debug APK
-        run: gradle assembleDebug --no-daemon -PapiBaseUrl=https://employers-troops-causes-conservation.trycloudflare.com
+        run: gradle assembleDebug --no-daemon
 
       - name: Upload the APK as a build artifact
         uses: actions/upload-artifact@v4

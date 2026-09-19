@@ -23,10 +23,17 @@ android {
         targetSdk = 34
         versionCode = playerVersionCode
         versionName = playerVersionName
+        // The real, permanent backend, live as of 2026-09-19 — unlike a dev
+        // tunnel this doesn't rotate, so once builds go out on this default,
+        // pairing a box never again means typing this address on a remote.
+        // API paths in Api.kt have no /api prefix of their own, so whatever
+        // address ends up here (this default, apiBaseUrl below, or one typed
+        // by hand on the pairing screen) must already include any prefix
+        // the target backend needs — this one needs none.
         buildConfigField(
             "String",
             "DEFAULT_API_BASE_URL",
-            "\"${project.findProperty("apiBaseUrl") ?: "https://console.sundryfoods.com"}\"",
+            "\"${project.findProperty("apiBaseUrl") ?: "https://api.areafiftysix.com"}\"",
         )
     }
 

@@ -118,7 +118,7 @@ class Api(private val baseUrlProvider: () -> String) {
 
     /** Trades the PIN shown on the box for the screen's identity. */
     suspend fun pair(pin: String): PairResponse? =
-        post("/api/screens/pair", """{"pairingCode":"${pin.trim()}"}""")
+        post("/screens/pair", """{"pairingCode":"${pin.trim()}"}""")
             ?.let { runCatching { json.decodeFromString<PairResponse>(it) }.getOrNull() }
 
     /**
@@ -130,7 +130,7 @@ class Api(private val baseUrlProvider: () -> String) {
     suspend fun heartbeat(code: String, playing: String?, firmware: String, status: String = "ONLINE"): HeartbeatResult? {
         val nowPlaying = playing?.replace("\"", "'")
         return post(
-            "/api/screens/heartbeat",
+            "/screens/heartbeat",
             buildString {
                 append("""{"code":"$code","firmware":"$firmware","status":"$status"""")
                 if (nowPlaying != null) append(""","playing":"$nowPlaying"""")
@@ -141,17 +141,17 @@ class Api(private val baseUrlProvider: () -> String) {
 
     /** The approved, published campaign and announcement for this screen. */
     suspend fun playback(code: String): Playback? =
-        get("/api/screens/$code/playback")
+        get("/screens/$code/playback")
             ?.let { runCatching { json.decodeFromString<Playback>(it) }.getOrNull() }
 
     /** Counter board for queue screens. */
     suspend fun queueBoard(code: String): QueueBoard? =
-        get("/api/public/queue/board/$code")
+        get("/public/queue/board/$code")
             ?.let { runCatching { json.decodeFromString<QueueBoard>(it) }.getOrNull() }
 
     /** Latest player release the fleet should be on. */
     suspend fun updateManifest(versionCode: Int): UpdateManifest? =
-        get("/api/public/player/update?versionCode=$versionCode")
+        get("/public/player/update?versionCode=$versionCode")
             ?.let { runCatching { json.decodeFromString<UpdateManifest>(it) }.getOrNull() }
             ?.takeIf { it.versionCode > 0 && it.apkUrl.isNotBlank() }
 }
