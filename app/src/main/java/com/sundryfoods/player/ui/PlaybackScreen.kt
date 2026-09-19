@@ -131,6 +131,10 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
                 // fast is a real crash risk, and matches exactly what took
                 // the whole app down during testing.
                 onEnded = { if (slides.size > 1 && slide.duration == null) index = (index + 1) % slides.size },
+                // With nothing else to rotate to, the only way to keep the
+                // screen alive is to replay this one; otherwise it plays
+                // once and freezes on its last frame.
+                loop = slides.size == 1,
             )
             else -> AsyncImage(
                 model = localPaths[slide.url] ?: slide.url,
@@ -167,13 +171,13 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
 }
 
 @Composable
-private fun VideoSlide(source: String, onEnded: () -> Unit) {
+private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
     val context = LocalContext.current
     val exo = remember { ExoPlayer.Builder(context).build() }
 
-    DisposableEffect(source) {
+    DisposableEffect(source, loop) {
         exo.setMediaItem(MediaItem.fromUri(source))
-        exo.repeatMode = Player.REPEAT_MODE_OFF
+        exo.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         exo.playWhenReady = true
         exo.volume = 0f
         exo.prepare()
