@@ -121,7 +121,16 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
             slide == null -> IdleCard(app.prefs.screenLabel, code, online, onUnpair)
             slide.kind.equals("VIDEO", true) -> VideoSlide(
                 source = localPaths[slide.url] ?: slide.url!!,
-                onEnded = { if (slides.size > 1) index = (index + 1) % slides.size },
+                // Exactly one thing may ever advance the slide: the fixed
+                // timer above when an admin-set duration caps this video,
+                // or natural end-of-playback when it doesn't. Firing both
+                // meant a video with a duration shorter than its real length
+                // got its ExoPlayer instance torn down mid-decode by the
+                // timer, then recreated for the next slide, then torn down
+                // again 15s later — recycling the hardware decoder that
+                // fast is a real crash risk, and matches exactly what took
+                // the whole app down during testing.
+                onEnded = { if (slides.size > 1 && slide.duration == null) index = (index + 1) % slides.size },
             )
             else -> AsyncImage(
                 model = localPaths[slide.url] ?: slide.url,
