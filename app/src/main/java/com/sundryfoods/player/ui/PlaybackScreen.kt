@@ -1,5 +1,6 @@
 package com.sundryfoods.player.ui
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -33,6 +36,7 @@ import com.sundryfoods.player.PlayerApp
 import com.sundryfoods.player.data.Playback
 import com.sundryfoods.player.data.Slide
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 private val Orange = Color(0xFFF05A22)
@@ -170,10 +174,23 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
     }
 }
 
+private const val VIDEO_TAG = "SundryPlayback"
+
+// A "full length" video (Slide.duration == null) has no fixed timer covering
+// it — see the advance effect above, which deliberately skips scheduling one
+// for that case so the timer and end-of-playback can't both fire on the same
+// slide. That means end-of-playback (or the fallbacks below) is the ONLY
+// thing that can ever move a full-length video along. Without them, a video
+// that errors out (bad file, dead URL) or a stream that stalls and never
+// reaches STATE_ENDED freezes the whole rotation forever — this is what
+// "stuck on the first video" turned out to be.
+private const val VIDEO_STALL_FAILSAFE_MS = 10 * 60 * 1000L // 10 minutes
+
 @Composable
 private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
     val context = LocalContext.current
     val exo = remember { ExoPlayer.Builder(context).build() }
+    val scope = rememberCoroutineScope()
 
     DisposableEffect(source, loop) {
         exo.setMediaItem(MediaItem.fromUri(source))
@@ -185,11 +202,35 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) onEnded()
             }
+            override fun onPlayerError(error: PlaybackException) {
+                Log.w(VIDEO_TAG, "Playback error on $source", error)
+                if (loop) {
+                    // Only one slide in the whole rotation — there's nowhere
+                    // to advance to, so retry this same video after a short
+                    // pause instead of leaving a frozen black screen.
+                    scope.launch {
+                        delay(5000)
+                        exo.prepare()
+                    }
+                } else {
+                    onEnded()
+                }
+            }
         }
         exo.addListener(listener)
         onDispose {
             exo.removeListener(listener)
             exo.release()
+        }
+    }
+
+    // Covers a stall that never surfaces as a player error at all — the
+    // same failsafe as onPlayerError above, for whatever that one misses.
+    if (!loop) {
+        LaunchedEffect(source) {
+            delay(VIDEO_STALL_FAILSAFE_MS)
+            Log.w(VIDEO_TAG, "Video stalled past ${VIDEO_STALL_FAILSAFE_MS}ms on $source — advancing")
+            onEnded()
         }
     }
 
