@@ -180,11 +180,19 @@ private const val VIDEO_TAG = "SundryPlayback"
 // it — see the advance effect above, which deliberately skips scheduling one
 // for that case so the timer and end-of-playback can't both fire on the same
 // slide. That means end-of-playback (or the fallbacks below) is the ONLY
-// thing that can ever move a full-length video along. Without them, a video
-// that errors out (bad file, dead URL) or a stream that stalls and never
-// reaches STATE_ENDED freezes the whole rotation forever — this is what
-// "stuck on the first video" turned out to be.
-private const val VIDEO_STALL_FAILSAFE_MS = 10 * 60 * 1000L // 10 minutes
+// thing that can ever move a full-length video along. A hard player error is
+// covered by onPlayerError below, but the box also froze on a single frame
+// with no error at all — a decoder or network stall that never reaches
+// STATE_ENDED and never surfaces as PlaybackException either. A fixed-delay
+// failsafe was tried first (10 minutes) and was worthless in practice: it's
+// a blanket wait regardless of whether playback is actually stuck, so a
+// frozen screen just sits frozen for up to 10 minutes before recovering.
+// This instead watches the thing that actually defines a stall — playback
+// position not moving while the player believes it's playing — and reacts
+// in seconds, not minutes, without ever touching a video that's genuinely
+// still playing (its position keeps advancing every check).
+private const val STALL_POLL_MS = 3_000L
+private const val STALL_THRESHOLD_MS = 15_000L // position stuck this long -> treat as stalled
 
 @Composable
 private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
@@ -224,13 +232,33 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
         }
     }
 
-    // Covers a stall that never surfaces as a player error at all — the
-    // same failsafe as onPlayerError above, for whatever that one misses.
-    if (!loop) {
-        LaunchedEffect(source) {
-            delay(VIDEO_STALL_FAILSAFE_MS)
-            Log.w(VIDEO_TAG, "Video stalled past ${VIDEO_STALL_FAILSAFE_MS}ms on $source — advancing")
-            onEnded()
+    // Polls actual playback progress rather than trusting player state,
+    // because the failure seen in the field was neither STATE_ENDED nor an
+    // error — just a frame that stopped advancing. This catches that AND a
+    // video that never gets past buffering in the first place: either way,
+    // "position isn't moving forward while genuinely playing" is false for
+    // STALL_THRESHOLD_MS straight, regardless of which of those it is.
+    LaunchedEffect(source) {
+        var lastPosition = -1L
+        var stalledMs = 0L
+        while (true) {
+            delay(STALL_POLL_MS)
+            val position = exo.currentPosition
+            val progressing = exo.playbackState == Player.STATE_READY && exo.isPlaying && position > lastPosition
+            stalledMs = if (progressing) 0L else stalledMs + STALL_POLL_MS
+            lastPosition = position
+            if (stalledMs >= STALL_THRESHOLD_MS) {
+                Log.w(VIDEO_TAG, "No playback progress for ${stalledMs}ms on $source (state=${exo.playbackState}, position=${position}ms)")
+                stalledMs = 0L
+                if (loop) {
+                    // Nowhere to advance to — nudge it back to the start
+                    // rather than leaving a frozen frame up indefinitely.
+                    exo.seekTo(0)
+                    exo.playWhenReady = true
+                } else {
+                    onEnded()
+                }
+            }
         }
     }
 
