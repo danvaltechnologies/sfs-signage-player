@@ -124,19 +124,35 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
         when {
             isQueueScreen -> QueueBoardScreen(code)
             slide == null -> IdleCard(app.prefs.screenLabel, code, online, onUnpair)
-            // key(source): without it, two VIDEO slides in a row (no image
-            // between them, so this `when` branch is taken again rather than
-            // leaving composition) are the SAME VideoSlide instance to
-            // Compose — its remembered ExoPlayer is reused, not recreated.
-            // DisposableEffect(source, loop) below releases that shared
-            // player in onDispose the moment `source` changes, then the very
-            // next effect run calls setMediaItem/prepare on that
-            // already-released instance — an immediate crash the first time
-            // any playlist ever had two consecutive videos, which nothing
-            // had actually exercised until today. key() forces Compose to
-            // treat each video as a genuinely new instance instead: fresh
-            // remember, fresh ExoPlayer, every time.
-            slide.kind.equals("VIDEO", true) -> key(localPaths[slide.url] ?: slide.url!!) {
+            // key(slide.url), not key(source): without SOME key, two VIDEO
+            // slides in a row (no image between them, so this `when` branch
+            // is taken again rather than leaving composition) are the SAME
+            // VideoSlide instance to Compose — its remembered ExoPlayer is
+            // reused, not recreated. DisposableEffect(source, loop) below
+            // releases that shared player in onDispose the moment `source`
+            // changes, then the very next effect run calls
+            // setMediaItem/prepare on that already-released instance — an
+            // immediate crash the first time any playlist ever had two
+            // consecutive videos, which nothing had actually exercised until
+            // this build.
+            //
+            // The key has to be slide.url (stable for as long as this is
+            // the same slide), not the resolved `source` passed below.
+            // `source` itself changes mid-playback the moment the
+            // background cache finishes downloading this same video —
+            // refreshPlayback() polls every 60s and updates localPaths
+            // independently of which slide is currently showing, so a video
+            // that started streaming from the raw URL (cache empty on
+            // first load) silently switches to its now-cached local file a
+            // few seconds later while STILL playing. Keying on that would
+            // tear down and rebuild the whole player mid-video for every
+            // single slide, every time — which is exactly what turned
+            // "played the first video" into "then went blank" one version
+            // ago. Keying on slide.url instead means that swap still
+            // reaches DisposableEffect (source is still its own key there,
+            // so the player reloads from the newly-cached file) but without
+            // discarding and recreating the ExoPlayer/PlayerView too.
+            slide.kind.equals("VIDEO", true) -> key(slide.url) {
                 VideoSlide(
                     source = localPaths[slide.url] ?: slide.url!!,
                     // Exactly one thing may ever advance the slide: the fixed

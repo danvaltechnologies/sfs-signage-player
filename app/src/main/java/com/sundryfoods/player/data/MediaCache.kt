@@ -1,6 +1,7 @@
 package com.sundryfoods.player.data
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -25,8 +26,11 @@ class MediaCache(context: Context, private val http: OkHttpClient) {
         return if (dot in 1..clean.length - 2) clean.substring(dot) else ""
     }
 
-    /** Local path if the asset is already on the box, otherwise null. */
-    fun localPath(url: String): String? = fileFor(url).takeIf { it.exists() && it.length() > 0 }?.absolutePath
+    /** Local path if the asset is already on the box, otherwise null. A proper
+     * file:// URI, not a bare filesystem path — ExoPlayer's scheme-based
+     * source resolution shouldn't have to guess. */
+    fun localPath(url: String): String? =
+        fileFor(url).takeIf { it.exists() && it.length() > 0 }?.let { Uri.fromFile(it).toString() }
 
     /**
      * Downloads anything missing; returns the path to play (local, else the
