@@ -110,3 +110,54 @@ jobs:
           body: Auto-published by CI from ${{ github.sha }}. Always the most recent successful build on main.
           make_latest: false
           files: app/build/outputs/apk/debug/app-debug.apk
+
+      # ---- Tell paired boxes this build exists ------------------------------
+      #
+      # The step above gives a permanent, public, unauthenticated download
+      # URL (this repo is public) — but nothing yet tells the backend a new
+      # build is there. Boxes self-update off GET /public/player/update,
+      # which only ever returns whatever was last registered with
+      # POST /player/releases (see server/src/modules/releases/releases.controller.ts) —
+      # so without this step, publishing a release here has zero effect on
+      # any box until someone calls that endpoint by hand.
+      #
+      # Needs a signed-in console session, so this logs in as a dedicated,
+      # least-privilege service account (only the "screens" module — see the
+      # player repo README for how to set one up) using two secrets:
+      # PLAYER_RELEASE_API_EMAIL and PLAYER_RELEASE_API_PASSWORD. Both are
+      # optional so the build itself never fails while they're not set up
+      # yet — this step just quietly skips until they are. Gated to main so
+      # a manual run on some other branch can never push itself to the fleet.
+      - name: Read the version this build is
+        id: version
+        if: github.ref == 'refs/heads/main'
+        run: |
+          echo "code=$(grep -oP 'playerVersionCode = \K[0-9]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+          echo "name=$(grep -oP 'playerVersionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      - name: Compute the APK's checksum
+        id: checksum
+        if: github.ref == 'refs/heads/main'
+        run: echo "sha256=$(sha256sum app/build/outputs/apk/debug/app-debug.apk | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Register this build with the console, so paired boxes self-update to it
+        if: github.ref == 'refs/heads/main' && secrets.PLAYER_RELEASE_API_EMAIL != ''
+        env:
+          RELEASE_API_EMAIL: ${{ secrets.PLAYER_RELEASE_API_EMAIL }}
+          RELEASE_API_PASSWORD: ${{ secrets.PLAYER_RELEASE_API_PASSWORD }}
+          API_BASE: https://api.areafiftysix.com
+          VERSION_CODE: ${{ steps.version.outputs.code }}
+          VERSION_NAME: ${{ steps.version.outputs.name }}
+          SHA256: ${{ steps.checksum.outputs.sha256 }}
+          APK_URL: https://github.com/danvaltechnologies/sfs-signage-player/releases/download/latest-debug/app-debug.apk
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          TOKEN=$(curl -sf -X POST "$API_BASE/auth/login" \
+            -H "content-type: application/json" \
+            -d "$(python3 -c 'import json,os;print(json.dumps({"email":os.environ["RELEASE_API_EMAIL"],"password":os.environ["RELEASE_API_PASSWORD"]}))')" \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
+          curl -sf -X POST "$API_BASE/player/releases" \
+            -H "authorization: Bearer $TOKEN" \
+            -H "content-type: application/json" \
+            -d "$(python3 -c 'import json,os;print(json.dumps({"versionCode":int(os.environ["VERSION_CODE"]),"versionName":os.environ["VERSION_NAME"],"apkUrl":os.environ["APK_URL"],"sha256":os.environ["SHA256"],"notes":"Auto-published from "+os.environ["COMMIT_SHA"]}))')"
