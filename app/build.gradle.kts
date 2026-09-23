@@ -10,8 +10,8 @@ plugins {
  * versionCode is the number the console compares against when it decides whether
  * a box needs to update itself. Bump it on every release you publish.
  */
-val playerVersionCode = 10
-val playerVersionName = "1.1.8"
+val playerVersionCode = 9
+val playerVersionName = "1.1.7"
 
 android {
     namespace = "com.sundryfoods.player"
@@ -34,13 +34,6 @@ android {
             "String",
             "DEFAULT_API_BASE_URL",
             "\"${project.findProperty("apiBaseUrl") ?: "https://api.areafiftysix.com"}\"",
-        )
-        // See gradle.properties — a public DSN, not a secret. Empty disables
-        // Sentry (PlayerApp checks for a blank string before initializing).
-        buildConfigField(
-            "String",
-            "SENTRY_DSN",
-            "\"${project.findProperty("sentryDsn") ?: ""}\"",
         )
     }
 
@@ -136,9 +129,4 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation("androidx.work:work-runtime-ktx:2.9.1")
-
-    // Manual init (PlayerApp.kt), not the Sentry Gradle plugin — the plugin's
-    // proguard-mapping/auto-instrumentation features need an org auth token
-    // we don't have and don't need for basic crash + captured-event reporting.
-    implementation("io.sentry:sentry-android:7.14.0")
 }
