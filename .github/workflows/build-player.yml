@@ -25,6 +25,11 @@ jobs:
       # both to the same one removes the disagreement instead of the var.
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
       ANDROID_SDK_ROOT: ${{ github.workspace }}/android-sdk
+      # `secrets` can't be read directly inside a step's `if:` — only in
+      # `env:`/`with:`/`run:` — so this mirrors it into `env` at job level,
+      # where `if:` conditions further down can check env.RELEASE_API_EMAIL
+      # instead. An empty secret comes through as an empty string either way.
+      RELEASE_API_EMAIL: ${{ secrets.PLAYER_RELEASE_API_EMAIL }}
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -141,7 +146,7 @@ jobs:
         run: echo "sha256=$(sha256sum app/build/outputs/apk/debug/app-debug.apk | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Register this build with the console, so paired boxes self-update to it
-        if: github.ref == 'refs/heads/main' && secrets.PLAYER_RELEASE_API_EMAIL != ''
+        if: github.ref == 'refs/heads/main' && env.RELEASE_API_EMAIL != ''
         env:
           RELEASE_API_EMAIL: ${{ secrets.PLAYER_RELEASE_API_EMAIL }}
           RELEASE_API_PASSWORD: ${{ secrets.PLAYER_RELEASE_API_PASSWORD }}
