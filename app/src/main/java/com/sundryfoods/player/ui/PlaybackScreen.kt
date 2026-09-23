@@ -333,6 +333,13 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             PlayerView(it).apply {
                 useController = false
                 player = exo
+                // The lifecycle observer above only reattaches the surface on
+                // a genuine ON_RESUME (a real screen lock/unlock). Confirmed
+                // live: every ordinary video start was ALSO blank, not just
+                // ones following a lock — the very first attachment needs
+                // this exact same nudge too, not only the ones after a real
+                // pause. Cheap and safe to call unconditionally on creation.
+                onResume()
             }.also { playerView = it }
         },
     )
