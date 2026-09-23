@@ -22,10 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -231,6 +234,30 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
     val exo = remember { ExoPlayer.Builder(context).build() }
     val scope = rememberCoroutineScope()
 
+    // The actual explanation for "plays, screen locks, unlocks to one frame
+    // then blank forever": PlayerView wraps a SurfaceView, whose underlying
+    // Surface is destroyed by the OS the moment the window stops being
+    // visible (screen off/locked) and has to be recreated and reattached
+    // on the way back — ExoPlayer itself was very likely still decoding
+    // the whole time. PlayerView has onResume()/onPause() specifically for
+    // this (standard Media3 Activity-integration guidance); nothing in
+    // this app ever called them, so nothing ever told the view to redo
+    // that reattachment. The single frame that flashes on unlock is
+    // whatever was already composited before the surface tears back down.
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> playerView?.onResume()
+                Lifecycle.Event.ON_PAUSE -> playerView?.onPause()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     DisposableEffect(source, loop) {
         exo.setMediaItem(MediaItem.fromUri(source))
         exo.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
@@ -306,7 +333,7 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             PlayerView(it).apply {
                 useController = false
                 player = exo
-            }
+            }.also { playerView = it }
         },
     )
 }
