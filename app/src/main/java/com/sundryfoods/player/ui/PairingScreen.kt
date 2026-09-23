@@ -65,9 +65,6 @@ fun PairingScreen(onPaired: () -> Unit) {
                 app.prefs.screenCode = result.code
                 app.prefs.screenType = result.type
                 app.prefs.screenLabel = listOfNotNull(result.location, result.city).joinToString(", ")
-                // Sentry initialized at app launch, before this box had a
-                // code — tag it now so every event from here on is filterable.
-                io.sentry.Sentry.setTag("screen_code", result.code)
                 onPaired()
             } else {
                 status = "That PIN was not recognised. Check the console and try again."
