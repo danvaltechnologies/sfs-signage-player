@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -123,23 +124,37 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
         when {
             isQueueScreen -> QueueBoardScreen(code)
             slide == null -> IdleCard(app.prefs.screenLabel, code, online, onUnpair)
-            slide.kind.equals("VIDEO", true) -> VideoSlide(
-                source = localPaths[slide.url] ?: slide.url!!,
-                // Exactly one thing may ever advance the slide: the fixed
-                // timer above when an admin-set duration caps this video,
-                // or natural end-of-playback when it doesn't. Firing both
-                // meant a video with a duration shorter than its real length
-                // got its ExoPlayer instance torn down mid-decode by the
-                // timer, then recreated for the next slide, then torn down
-                // again 15s later — recycling the hardware decoder that
-                // fast is a real crash risk, and matches exactly what took
-                // the whole app down during testing.
-                onEnded = { if (slides.size > 1 && slide.duration == null) index = (index + 1) % slides.size },
-                // With nothing else to rotate to, the only way to keep the
-                // screen alive is to replay this one; otherwise it plays
-                // once and freezes on its last frame.
-                loop = slides.size == 1,
-            )
+            // key(source): without it, two VIDEO slides in a row (no image
+            // between them, so this `when` branch is taken again rather than
+            // leaving composition) are the SAME VideoSlide instance to
+            // Compose — its remembered ExoPlayer is reused, not recreated.
+            // DisposableEffect(source, loop) below releases that shared
+            // player in onDispose the moment `source` changes, then the very
+            // next effect run calls setMediaItem/prepare on that
+            // already-released instance — an immediate crash the first time
+            // any playlist ever had two consecutive videos, which nothing
+            // had actually exercised until today. key() forces Compose to
+            // treat each video as a genuinely new instance instead: fresh
+            // remember, fresh ExoPlayer, every time.
+            slide.kind.equals("VIDEO", true) -> key(localPaths[slide.url] ?: slide.url!!) {
+                VideoSlide(
+                    source = localPaths[slide.url] ?: slide.url!!,
+                    // Exactly one thing may ever advance the slide: the fixed
+                    // timer above when an admin-set duration caps this video,
+                    // or natural end-of-playback when it doesn't. Firing both
+                    // meant a video with a duration shorter than its real length
+                    // got its ExoPlayer instance torn down mid-decode by the
+                    // timer, then recreated for the next slide, then torn down
+                    // again 15s later — recycling the hardware decoder that
+                    // fast is a real crash risk, and matches exactly what took
+                    // the whole app down during testing.
+                    onEnded = { if (slides.size > 1 && slide.duration == null) index = (index + 1) % slides.size },
+                    // With nothing else to rotate to, the only way to keep the
+                    // screen alive is to replay this one; otherwise it plays
+                    // once and freezes on its last frame.
+                    loop = slides.size == 1,
+                )
+            }
             else -> AsyncImage(
                 model = localPaths[slide.url] ?: slide.url,
                 contentDescription = slide.label,
@@ -212,16 +227,23 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             }
             override fun onPlayerError(error: PlaybackException) {
                 Log.w(VIDEO_TAG, "Playback error on $source", error)
-                if (loop) {
-                    // Only one slide in the whole rotation — there's nowhere
-                    // to advance to, so retry this same video after a short
-                    // pause instead of leaving a frozen black screen.
-                    scope.launch {
-                        delay(5000)
+                // A short pause before reacting either way — an error that
+                // fires this fast on every attempt (a codec/network issue
+                // specific to this file or this box) would otherwise retry
+                // or advance in a tight loop, tearing down and recreating a
+                // hardware decoder as fast as the CPU allows. That's the
+                // same crash risk the timer/onEnded double-advance already
+                // caused once; an unthrottled error path is just another
+                // route to it.
+                scope.launch {
+                    delay(4000)
+                    if (loop) {
+                        // Only one slide in the whole rotation — there's
+                        // nowhere to advance to, so retry this same video.
                         exo.prepare()
+                    } else {
+                        onEnded()
                     }
-                } else {
-                    onEnded()
                 }
             }
         }
