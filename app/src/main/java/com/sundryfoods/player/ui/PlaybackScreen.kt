@@ -20,6 +20,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -279,16 +280,23 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
 
     Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
         // Always mounted for the life of this screen (see above) — sits
-        // underneath everything else. An image, the idle card or the queue
-        // board fully covers it whenever the current slide isn't a video.
+        // underneath everything else. Explicitly hidden (alpha 0) rather
+        // than relying on whatever's drawn "on top" to fully cover it: an
+        // image whose aspect ratio doesn't match the screen (ContentScale.Fit
+        // letterboxes rather than cropping) leaves the video's paused last
+        // frame visible in the gap either side — confirmed live with a
+        // square test image on a widescreen frame. Hiding the surface
+        // outright is correct regardless of the covering content's shape or
+        // opacity, not just for this one image.
+        //
         // Inflated from res/layout/player_view.xml rather than constructed
         // directly (PlayerView(context)) — surface_type is only settable
         // via that XML attribute, and the default SurfaceView it would
-        // otherwise use composites on its own hardware layer, which is what
-        // produced the video visibly bleeding through the image "on top"
-        // of it. texture_view is an ordinary part of the view hierarchy.
+        // otherwise use composites on its own hardware layer, which doesn't
+        // reliably respect normal view/Compose stacking order. texture_view
+        // is an ordinary part of the view hierarchy.
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().alpha(if (isVideo) 1f else 0f),
             factory = { ctx ->
                 (LayoutInflater.from(ctx).inflate(R.layout.player_view, null) as PlayerView).apply {
                     player = exo
