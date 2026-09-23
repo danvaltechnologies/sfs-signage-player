@@ -35,6 +35,9 @@ import com.sundryfoods.player.BuildConfig
 import com.sundryfoods.player.PlayerApp
 import com.sundryfoods.player.data.Playback
 import com.sundryfoods.player.data.Slide
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import io.sentry.SentryLevel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -75,6 +78,10 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
     suspend fun refreshPlayback() {
         val next = app.api.playback(code)
         if (next != null) {
+            // Only worth a breadcrumb on the offline->online edge, not every
+            // successful poll — this runs every 60s and would otherwise
+            // drown out everything more interesting.
+            if (!online) Sentry.addBreadcrumb(Breadcrumb.info("Back online — playback refreshed"))
             online = true
             playback = next
             app.prefs.cachedPlayback = runCatching { json.encodeToString(Playback.serializer(), next) }.getOrNull()
@@ -83,6 +90,9 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
             localPaths = resolved
             app.mediaCache.prune(slidesByUrl.keys.toList())
         } else {
+            if (online) {
+                Sentry.addBreadcrumb(Breadcrumb().apply { message = "Playback poll failed — going offline"; level = SentryLevel.WARNING })
+            }
             online = false
         }
     }
@@ -201,6 +211,7 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
     val scope = rememberCoroutineScope()
 
     DisposableEffect(source, loop) {
+        Sentry.addBreadcrumb(Breadcrumb.info("Starting video: $source (loop=$loop)"))
         exo.setMediaItem(MediaItem.fromUri(source))
         exo.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         exo.playWhenReady = true
@@ -212,6 +223,7 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             }
             override fun onPlayerError(error: PlaybackException) {
                 Log.w(VIDEO_TAG, "Playback error on $source", error)
+                Sentry.captureException(error) { sentryScope -> sentryScope.setExtra("source", source) }
                 if (loop) {
                     // Only one slide in the whole rotation — there's nowhere
                     // to advance to, so retry this same video after a short
@@ -249,6 +261,12 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             lastPosition = position
             if (stalledMs >= STALL_THRESHOLD_MS) {
                 Log.w(VIDEO_TAG, "No playback progress for ${stalledMs}ms on $source (state=${exo.playbackState}, position=${position}ms)")
+                Sentry.captureMessage("Video stalled — no progress for ${stalledMs}ms", SentryLevel.WARNING) { sentryScope ->
+                    sentryScope.setExtra("source", source)
+                    sentryScope.setExtra("playbackState", exo.playbackState.toString())
+                    sentryScope.setExtra("positionMs", position.toString())
+                    sentryScope.setExtra("loop", loop.toString())
+                }
                 stalledMs = 0L
                 if (loop) {
                     // Nowhere to advance to — nudge it back to the start

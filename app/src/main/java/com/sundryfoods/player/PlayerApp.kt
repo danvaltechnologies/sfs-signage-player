@@ -11,6 +11,7 @@ import com.sundryfoods.player.data.MediaCache
 import com.sundryfoods.player.data.Prefs
 import com.sundryfoods.player.update.UpdateWorker
 import com.sundryfoods.player.sync.HeartbeatWorker
+import io.sentry.android.core.SentryAndroid
 import java.util.concurrent.TimeUnit
 
 class PlayerApp : Application() {
@@ -26,6 +27,21 @@ class PlayerApp : Application() {
         api = Api { prefs.baseUrl }
         mediaCache = MediaCache(this, api.client)
         scheduleBackgroundWork(this)
+        initSentry()
+    }
+
+    /** A box this can't sideload-and-plug-in-a-laptop-to is otherwise a black
+     * box the moment something goes wrong — this is the only way anyone
+     * finds out what actually happened. Blank DSN (no build-time value
+     * configured) just skips init rather than crashing on startup. */
+    private fun initSentry() {
+        if (BuildConfig.SENTRY_DSN.isBlank()) return
+        SentryAndroid.init(this) { options ->
+            options.dsn = BuildConfig.SENTRY_DSN
+            options.environment = if (BuildConfig.DEBUG) "debug" else "release"
+            options.release = "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}"
+        }
+        if (prefs.isPaired) io.sentry.Sentry.setTag("screen_code", prefs.screenCode ?: "unknown")
     }
 
     companion object {
