@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Programmatic `PlayerView(context)` construction defaults to a SurfaceView
+  (SURFACE_TYPE_SURFACE_VIEW) — there's no code-only way to change that,
+  it's read from this surface_type attribute at inflation time only. A
+  SurfaceView composites on its own hardware layer and doesn't reliably
+  respect normal view/Compose stacking order, which is what produced the
+  video visibly bleeding through the image drawn "on top" of it in
+  PlaybackScreen.kt (the AndroidView is a permanent base layer there now —
+  see that file's comments). texture_view composites as an ordinary part of
+  the view hierarchy instead, so normal draw order actually holds.
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/player_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view"
+    app:use_controller="false" />

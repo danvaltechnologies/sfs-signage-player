@@ -1,6 +1,7 @@
 package com.sundryfoods.player.ui
 
 import android.util.Log
+import android.view.LayoutInflater
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +38,7 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.sundryfoods.player.BuildConfig
 import com.sundryfoods.player.PlayerApp
+import com.sundryfoods.player.R
 import com.sundryfoods.player.data.Playback
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -279,11 +281,16 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
         // Always mounted for the life of this screen (see above) — sits
         // underneath everything else. An image, the idle card or the queue
         // board fully covers it whenever the current slide isn't a video.
+        // Inflated from res/layout/player_view.xml rather than constructed
+        // directly (PlayerView(context)) — surface_type is only settable
+        // via that XML attribute, and the default SurfaceView it would
+        // otherwise use composites on its own hardware layer, which is what
+        // produced the video visibly bleeding through the image "on top"
+        // of it. texture_view is an ordinary part of the view hierarchy.
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = {
-                PlayerView(it).apply {
-                    useController = false
+            factory = { ctx ->
+                (LayoutInflater.from(ctx).inflate(R.layout.player_view, null) as PlayerView).apply {
                     player = exo
                     onResume()
                 }.also { playerView = it }
