@@ -29,6 +29,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
@@ -36,6 +37,9 @@ import com.sundryfoods.player.BuildConfig
 import com.sundryfoods.player.PlayerApp
 import com.sundryfoods.player.data.Playback
 import com.sundryfoods.player.data.Slide
+import io.sentry.Breadcrumb
+import io.sentry.Sentry
+import io.sentry.SentryLevel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -76,6 +80,10 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
     suspend fun refreshPlayback() {
         val next = app.api.playback(code)
         if (next != null) {
+            // Only worth a breadcrumb on the offline->online edge, not every
+            // successful poll — this runs every 60s and would otherwise
+            // drown out everything more interesting.
+            if (!online) Sentry.addBreadcrumb(Breadcrumb.info("Back online — playback refreshed"))
             online = true
             playback = next
             app.prefs.cachedPlayback = runCatching { json.encodeToString(Playback.serializer(), next) }.getOrNull()
@@ -84,6 +92,9 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
             localPaths = resolved
             app.mediaCache.prune(slidesByUrl.keys.toList())
         } else {
+            if (online) {
+                Sentry.addBreadcrumb(Breadcrumb().apply { message = "Playback poll failed — going offline"; level = SentryLevel.WARNING })
+            }
             online = false
         }
     }
@@ -228,10 +239,19 @@ private const val STALL_THRESHOLD_MS = 15_000L // position stuck this long -> tr
 @Composable
 private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
     val context = LocalContext.current
-    val exo = remember { ExoPlayer.Builder(context).build() }
+    val exo = remember {
+        // setEnableDecoderFallback: if the box's primary (hardware) decoder
+        // for this format fails or hangs, retry with the next-best decoder
+        // instead of leaving playback stuck — a standard ExoPlayer mitigation
+        // for exactly the failure mode seen in the field, a decoder that
+        // renders one frame and then never produces another.
+        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        ExoPlayer.Builder(context, renderers).build()
+    }
     val scope = rememberCoroutineScope()
 
     DisposableEffect(source, loop) {
+        Sentry.addBreadcrumb(Breadcrumb.info("Starting video: $source (loop=$loop)"))
         exo.setMediaItem(MediaItem.fromUri(source))
         exo.repeatMode = if (loop) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         exo.playWhenReady = true
@@ -243,6 +263,7 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             }
             override fun onPlayerError(error: PlaybackException) {
                 Log.w(VIDEO_TAG, "Playback error on $source", error)
+                Sentry.captureException(error) { sentryScope -> sentryScope.setExtra("source", source) }
                 // A short pause before reacting either way — an error that
                 // fires this fast on every attempt (a codec/network issue
                 // specific to this file or this box) would otherwise retry
@@ -287,6 +308,14 @@ private fun VideoSlide(source: String, onEnded: () -> Unit, loop: Boolean) {
             lastPosition = position
             if (stalledMs >= STALL_THRESHOLD_MS) {
                 Log.w(VIDEO_TAG, "No playback progress for ${stalledMs}ms on $source (state=${exo.playbackState}, position=${position}ms)")
+                Sentry.captureMessage("Video stalled — no progress for ${stalledMs}ms", SentryLevel.WARNING) { sentryScope ->
+                    sentryScope.setExtra("source", source)
+                    sentryScope.setExtra("playbackState", exo.playbackState.toString())
+                    sentryScope.setExtra("positionMs", position.toString())
+                    sentryScope.setExtra("bufferedPositionMs", exo.bufferedPosition.toString())
+                    sentryScope.setExtra("videoFormat", exo.videoFormat?.toString() ?: "none")
+                    sentryScope.setExtra("loop", loop.toString())
+                }
                 stalledMs = 0L
                 if (loop) {
                     // Nowhere to advance to — nudge it back to the start
