@@ -1,6 +1,8 @@
 package com.sundryfoods.player
 
 import android.os.Build
+import android.os.SystemClock
+import android.view.KeyEvent
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -19,6 +21,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
+import com.sundryfoods.player.kiosk.Kiosk
 import com.sundryfoods.player.ui.PairingScreen
 import com.sundryfoods.player.ui.PlaybackScreen
 import com.sundryfoods.player.update.UpdateWorker
@@ -57,6 +60,21 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         goImmersive()
+        Kiosk.enter(this)
+    }
+
+    // Escape hatch for a technician on a locked box: press Back 7 times within 4 seconds.
+    private var backPresses = 0
+    private var firstBackAt = 0L
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+            val now = SystemClock.elapsedRealtime()
+            if (now - firstBackAt > 4000) { backPresses = 0; firstBackAt = now }
+            if (++backPresses >= 7) { backPresses = 0; Kiosk.exit(this) }
+            return true // Back never leaves the player
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun goImmersive() {
