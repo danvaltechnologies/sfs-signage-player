@@ -13,5 +13,7 @@ adb "${D[@]}" root >/dev/null 2>&1 || true; sleep 2; adb connect "$IP:5555" >/de
 adb "${D[@]}" install -r -i "$P" "$APK"
 adb "${D[@]}" shell cmd package set-home-activity "$P/com.sundryfoods.player.MainActivity" || true
 adb "${D[@]}" shell "settings put global stay_on_while_plugged_in 7; settings put system screen_off_timeout 2147483647; settings put secure screensaver_enabled 0; svc power stayon true" || true
+# Let the player tap the system "Install" prompt for its own updates (no device owner needed).
+adb "${D[@]}" shell "settings put secure enabled_accessibility_services $P/com.sundryfoods.player.update.AutoInstallService; settings put secure accessibility_enabled 1" || true
 adb "${D[@]}" shell am start -n "$P/com.sundryfoods.player.MainActivity" >/dev/null
 echo "Provisioned $IP — pair it with a PIN from the console."
