@@ -84,7 +84,11 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
     }
     var index by remember { mutableStateOf(0) }
     var online by remember { mutableStateOf(true) }
-    var localPaths by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // Seeded from what is already on disk so a cold start with no network (power cut,
+    // Wi-Fi down) plays the cached files straight away instead of trying remote URLs.
+    fun cachedPaths(p: Playback): Map<String, String> =
+        p.slides.mapNotNull { s -> s.url?.let { u -> app.mediaCache.localPath(u)?.let { u to it } } }.toMap()
+    var localPaths by remember { mutableStateOf(cachedPaths(playback)) }
 
     // Shared by the poll loop below and the heartbeat loop's resync signal,
     // so a console-requested resync can trigger the same refresh early
@@ -101,6 +105,7 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
             app.mediaCache.prune(slidesByUrl.keys.toList())
         } else {
             online = false
+            localPaths = cachedPaths(playback)
         }
     }
 
@@ -334,7 +339,7 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
 
         if (!online) {
             Text(
-                "Offline — playing the last approved rotation",
+                "Offline",
                 color = Color(0x99FFFFFF),
                 fontSize = 12.sp,
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
