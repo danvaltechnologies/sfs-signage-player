@@ -36,7 +36,12 @@ data class Slide(
 )
 
 @Serializable
-data class HeartbeatResult(val ok: Boolean = false, val resyncRequested: Boolean = false)
+data class HeartbeatResult(
+    val ok: Boolean = false,
+    val resyncRequested: Boolean = false,
+    /** False once the console has unpaired this screen (e.g. its PIN was regenerated). */
+    val paired: Boolean = true,
+)
 
 @Serializable
 data class Campaign(val id: String = "", val name: String = "")
@@ -94,11 +99,15 @@ class Api(private val baseUrlProvider: () -> String) {
 
     val client: OkHttpClient get() = http
 
+    /** Set when the console says this screen is no longer paired (HTTP 410, or heartbeat `paired:false`). */
+    @Volatile var unpaired = false
+
     private fun url(path: String) = baseUrlProvider().trimEnd('/') + path
 
     private suspend fun get(path: String): String? = withContext(Dispatchers.IO) {
         runCatching {
             http.newCall(Request.Builder().url(url(path)).build()).execute().use { res ->
+                if (res.code == 410) unpaired = true
                 if (!res.isSuccessful) null else res.body?.string()
             }
         }.getOrNull()
@@ -111,6 +120,7 @@ class Api(private val baseUrlProvider: () -> String) {
                 .post(body.toRequestBody("application/json".toMediaType()))
                 .build()
             http.newCall(request).execute().use { res ->
+                if (res.code == 410) unpaired = true
                 if (!res.isSuccessful) null else res.body?.string()
             }
         }.getOrNull()
@@ -137,6 +147,7 @@ class Api(private val baseUrlProvider: () -> String) {
                 append("}")
             },
         )?.let { runCatching { json.decodeFromString<HeartbeatResult>(it) }.getOrNull() }
+            ?.also { if (!it.paired) unpaired = true }
     }
 
     /** The approved, published campaign and announcement for this screen. */

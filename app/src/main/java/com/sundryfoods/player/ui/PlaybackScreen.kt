@@ -95,6 +95,12 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
     // instead of duplicating this logic in two places.
     suspend fun refreshPlayback() {
         val next = app.api.playback(code)
+        if (app.api.unpaired) {
+            app.api.unpaired = false
+            app.prefs.cachedPlayback = null
+            onUnpair()
+            return
+        }
         if (next != null) {
             online = true
             playback = next
@@ -124,6 +130,12 @@ fun PlaybackScreen(onUnpair: () -> Unit) {
         while (true) {
             val nowPlaying = playback.campaign?.name ?: playback.slides.getOrNull(index)?.label
             val result = app.api.heartbeat(code, nowPlaying, BuildConfig.VERSION_NAME)
+            if (app.api.unpaired) {
+                app.api.unpaired = false
+                app.prefs.cachedPlayback = null
+                onUnpair()
+                return@LaunchedEffect
+            }
             if (result?.resyncRequested == true) refreshPlayback()
             delay(HEARTBEAT_SECONDS * 1000)
         }
