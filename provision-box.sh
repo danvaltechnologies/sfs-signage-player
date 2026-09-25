@@ -11,6 +11,11 @@ adb connect "$IP:5555" >/dev/null
 D=(-s "$IP:5555")
 adb "${D[@]}" root >/dev/null 2>&1 || true; sleep 2; adb connect "$IP:5555" >/dev/null
 adb "${D[@]}" install -r -i "$P" "$APK"
+# Disable the stock TV launchers so the player is the only Home app. The Home preference is
+# wiped on every self-update, but with nothing else to pick, boot and Home always land on us.
+for L in com.google.android.tvlauncher com.google.android.leanbacklauncher com.android.launcher3; do
+  adb "${D[@]}" shell pm disable-user --user 0 "$L" >/dev/null 2>&1 || true
+done
 adb "${D[@]}" shell cmd package set-home-activity "$P/com.sundryfoods.player.MainActivity" || true
 adb "${D[@]}" shell "settings put global stay_on_while_plugged_in 7; settings put system screen_off_timeout 2147483647; settings put secure screensaver_enabled 0; svc power stayon true" || true
 # Let the player tap the system "Install" prompt for its own updates (no device owner needed).
