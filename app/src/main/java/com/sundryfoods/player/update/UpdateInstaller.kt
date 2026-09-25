@@ -81,6 +81,11 @@ object UpdateInstaller {
     private fun installSilently(context: Context, apk: File): Boolean {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        // Android 12+: when we're the installer of record (provisioning installs us with
+        // `adb install -i <our package>`), updates go through with no prompt — no device owner needed.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            params.setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+        }
         val sessionId = installer.createSession(params)
         installer.openSession(sessionId).use { session ->
             session.openWrite("player", 0, apk.length()).use { out ->
