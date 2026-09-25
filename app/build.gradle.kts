@@ -10,8 +10,8 @@ plugins {
  * versionCode is the number the console compares against when it decides whether
  * a box needs to update itself. Bump it on every release you publish.
  */
-val playerVersionCode = 21
-val playerVersionName = "1.1.19"
+val playerVersionCode = 22
+val playerVersionName = "1.1.20"
 
 android {
     namespace = "com.sundryfoods.player"
